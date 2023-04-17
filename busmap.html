@@ -37,19 +37,17 @@
         <div id='map'></div>
         <script>
 
-            var currentMarkers = [];
+            var currentMarkers = {};
+            
             function loadBuses(map, buses) {
-                // remove markers 
-                if (currentMarkers!==null) {
-                    for (var i = currentMarkers.length - 1; i >= 0; i--) {
-                        currentMarkers[i].remove();
-                    }
-                }
-                currentMarkers = [];
+
+                // Remember active vehicleIds from the most recent result
+                let activeVehicleIds = new Set();
 
                 for (let rawPt of buses) {
                     if (typeof(rawPt.LastPositionLatitude) !== 'number' ||
-                        typeof(rawPt.LastPositionLongitude) !== 'number') 
+                        typeof(rawPt.LastPositionLongitude) !== 'number' ||
+                        typeof(rawPt.VehicleId) !== 'string') 
                     {
                             continue;
                     }
@@ -59,19 +57,35 @@
                             continue;
                     }
 
-                    let m = new maplibregl.Marker()
-                        .setLngLat([rawPt.LastPositionLongitude, 
-                                    rawPt.LastPositionLatitude])
-                        .setPopup(new maplibregl.Popup().setHTML(
-                            '<div class="popup">Line '+rawPt.CurrentRoute+
-                            '</br>'+rawPt.EstimatedOccupancyStatus+'</div>')) // add popup
-                        .addTo(map);
-                        currentMarkers.push(m);
+                    activeVehicleIds.add(rawPt.VehicleId);
+                    if (rawPt.VehicleId in currentMarkers) {
+                        currentMarkers[rawPt.VehicleId].setLngLat(
+                            [rawPt.LastPositionLongitude, 
+                             rawPt.LastPositionLatitude]);
+                    } else {
+                        let m = new maplibregl.Marker()
+                            .setLngLat([rawPt.LastPositionLongitude, 
+                                        rawPt.LastPositionLatitude])
+                            .setPopup(new maplibregl.Popup().setHTML(
+                                '<div class="popup">Line '+rawPt.CurrentRoute+
+                                '</br>'+rawPt.EstimatedOccupancyStatus+'</div>')) // add popup
+                            .addTo(map);
+                        currentMarkers[rawPt.VehicleId] = m;
+                    }
+                }
+
+                // Prune any markers that were not in the last update
+                for (let vehicleId in currentMarkers) {
+                    if (!activeVehicleIds.has(vehicleId)) {
+                        currentMarkers[vehicleId].remove();
+                    }
                 }
             };
 
             function updateMap(xmlhttp, map) {
-                var busUrl = "https://api.actransit.org/transit/vehicle/realtimeattributes?token=DFA4FA38EC8C5A618B1A8A3E67DFCEE0";
+                var busUrl = "https://api.actransit.org/"+
+                             "transit/vehicle/realtimeattributes?"+
+                             "token=DFA4FA38EC8C5A618B1A8A3E67DFCEE0";
                 // Load the Realtime bus data
                 xmlhttp.open("GET", busUrl, true);
                 xmlhttp.send();
@@ -108,7 +122,6 @@
                         layers: protomaps_themes_base.default("protomaps", "light")
                     }
                 });
-                map.showTileBoundaries = true;
 
                 var xmlhttp = new XMLHttpRequest();
                 xmlhttp.onreadystatechange = function() {
@@ -118,7 +131,8 @@
                     }
                 };
                 updateMap(xmlhttp, map);
-                setInterval(updateMap, 15000, xmlhttp, map);
+                // Refresh every minute
+                setInterval(updateMap, 60000, xmlhttp, map);
             });
         </script>
     </body>
